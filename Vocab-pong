@@ -232,4 +232,193 @@
     // Vocabulary settings and word pool
     let vocabDifficulty = "1"; // default level
     let usedWords = { "1": [], "2": [], "3": [] };
-    const vocabWords
+    const vocabWords = {
+      "1": ["cat", "dog", "sun", "pen", "bag", "owl", "bat", "cup", "fox", "bee"],
+      "2": ["apple", "grape", "pearl", "ocean", "river", "house", "plant", "chair", "table", "bread"],
+      "3": ["computer", "elephant", "umbrella", "airplane", "mountain", "treasure", "hospital", "notebook", "dinosaur", "adventure"]
+    };
+    let currentWord = ""; // the word to be solved during a challenge
+
+    function getRandomVocabWord() {
+      let words = vocabWords[vocabDifficulty];
+      let used = usedWords[vocabDifficulty];
+      let available = words.filter(word => !used.includes(word));
+      if (available.length === 0) {
+        // if all words have been used, reset the used list for that level
+        usedWords[vocabDifficulty] = [];
+        available = words;
+      }
+      let word = available[Math.floor(Math.random() * available.length)];
+      usedWords[vocabDifficulty].push(word);
+      return word;
+    }
+
+    // Simple function to scramble a word
+    function scrambleWord(word) {
+      let arr = word.split('');
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      let scrambled = arr.join('');
+      // if the scramble equals the original (and length > 1), scramble again
+      if (scrambled === word && word.length > 1) return scrambleWord(word);
+      return scrambled;
+    }
+
+    // Reset ball to center (direction indicates which way to send the ball after reset)
+    function resetBall(direction = 1) {
+      ball.x = canvas.width / 2;
+      ball.y = canvas.height / 2;
+      ball.velocityX = 4 * direction;
+      ball.velocityY = (Math.random() > 0.5 ? 2 : -2);
+    }
+
+    // Start the game when player taps "Start" or presses space
+    function startGame() {
+      gameStarted = true;
+      gamePaused = false;
+      startOverlay.style.display = "none";
+      playerPaddle.y = canvas.height / 2 - paddleHeight / 2;
+      aiPaddle.y = canvas.height / 2 - paddleHeight / 2;
+      resetBall(1);
+      gameLoop();
+    }
+    startButton.addEventListener("click", startGame);
+    document.addEventListener("keydown", (e) => {
+      if (!gameStarted && e.code === "Space") {
+        startGame();
+      }
+    });
+
+    // Settings modal functionality
+    settingsButton.addEventListener("click", () => { settingsModal.style.display = "block"; });
+    closeSettings.addEventListener("click", () => { settingsModal.style.display = "none"; });
+    saveSettingsButton.addEventListener("click", () => {
+      gameColor = gameColorSelect.value;
+      canvas.style.background = gameColor;
+      contrastColor = getContrastingColor(gameColor);
+      vocabDifficulty = vocabDifficultySelect.value;
+      settingsModal.style.display = "none";
+    });
+
+    // When the player misses the ball (ball passes the left edge), prompt a vocabulary challenge.
+    function triggerVocabChallenge() {
+      gamePaused = true;
+      currentWord = getRandomVocabWord();
+      let scrambled = scrambleWord(currentWord);
+      vocabPrompt.textContent = "Unscramble: " + scrambled;
+      vocabAnswerInput.value = "";
+      vocabFeedback.textContent = "";
+      vocabModal.style.display = "block";
+    }
+
+    submitVocabButton.addEventListener("click", () => {
+      let answer = vocabAnswerInput.value.trim().toLowerCase();
+      if (answer === currentWord.toLowerCase()) {
+        vocabModal.style.display = "none";
+        gamePaused = false;
+        resetBall(1); // send ball toward the AI paddle after success
+        gameLoop();
+      } else {
+        vocabFeedback.textContent = "Incorrect! Try again.";
+      }
+    });
+
+    // Game loop using requestAnimationFrame
+    function gameLoop() {
+      if (!gameStarted || gamePaused) return;
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Update positions for paddles and ball
+    function update() {
+      // Player paddle movement via keys (ArrowUp/W and ArrowDown/S)
+      if (keysDown["ArrowUp"] || keysDown["w"]) playerPaddle.y -= paddleSpeed;
+      if (keysDown["ArrowDown"] || keysDown["s"]) playerPaddle.y += paddleSpeed;
+      if (playerPaddle.y < 0) playerPaddle.y = 0;
+      if (playerPaddle.y + playerPaddle.height > canvas.height)
+        playerPaddle.y = canvas.height - playerPaddle.height;
+
+      // Simple AI for a vertical paddle chasing ball
+      if (ball.y < aiPaddle.y + aiPaddle.height/2)
+        aiPaddle.y -= paddleSpeed * 0.85;
+      else
+        aiPaddle.y += paddleSpeed * 0.85;
+      if (aiPaddle.y < 0) aiPaddle.y = 0;
+      if (aiPaddle.y + aiPaddle.height > canvas.height)
+        aiPaddle.y = canvas.height - aiPaddle.height;
+
+      // Move the ball
+      ball.x += ball.velocityX;
+      ball.y += ball.velocityY;
+
+      // Bounce off top & bottom walls
+      if (ball.y - ball.radius < 0 || ball.y + ball.radius > canvas.height)
+        ball.velocityY = -ball.velocityY;
+
+      // Collision with player's paddle
+      if (ball.x - ball.radius < playerPaddle.x + playerPaddle.width &&
+          ball.y > playerPaddle.y &&
+          ball.y < playerPaddle.y + playerPaddle.height) {
+        ball.velocityX = -ball.velocityX;
+        score++;
+      }
+      
+      // Collision with AI paddle
+      if (ball.x + ball.radius > aiPaddle.x &&
+          ball.y > aiPaddle.y &&
+          ball.y < aiPaddle.y + aiPaddle.height) {
+        ball.velocityX = -ball.velocityX;
+      }
+      
+      // If the player misses
+      if (ball.x - ball.radius < 0) {
+        triggerVocabChallenge();
+      }
+      
+      // If the AI misses (ball goes off right edge), count a point and reset ball
+      if (ball.x + ball.radius > canvas.width) {
+        score++;
+        resetBall(-1); // ball sent toward player side
+      }
+    }
+
+    // Draw everything on canvas
+    function draw() {
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Fill background using the gameColor
+      ctx.fillStyle = gameColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw a dashed center line
+      ctx.strokeStyle = contrastColor;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(canvas.width/2, 0);
+      ctx.lineTo(canvas.width/2, canvas.height);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      // Draw player paddle
+      ctx.fillStyle = contrastColor;
+      ctx.fillRect(playerPaddle.x, playerPaddle.y, playerPaddle.width, playerPaddle.height);
+      
+      // Draw AI paddle
+      ctx.fillRect(aiPaddle.x, aiPaddle.y, aiPaddle.width, aiPaddle.height);
+      
+      // Draw ball
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Draw score (centered at top)
+      ctx.font = "20px Arial";
+      ctx.fillText("Score: " + score, canvas.width / 2 - 40, 30);
+    }
+  </script>
+</body>
+</html>
